@@ -128,8 +128,11 @@ def render(raw_spec, out_dir, brand=''):
             make_card(png, sc['text'], k, len(scenes), w, h, brand or str(spec.get('brand') or ''))
             engines.add(tts(sc['voice'], wav, tmp))
             dur = max(sc['dur'], duration(wav) + 0.5)
-            run(['ffmpeg', '-y', '-loglevel', 'error', '-loop', '1', '-framerate', str(fps), '-i', png, '-i', wav,
-                 '-t', '%.2f' % dur, '-af', 'apad', '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
+            # Cards are static: feed 2 distinct frames/s and let ffmpeg duplicate to the output fps.
+            # This keeps standard fps for platforms while cutting CPU several-fold on small hosts.
+            run(['ffmpeg', '-y', '-loglevel', 'error', '-loop', '1', '-framerate', '2', '-i', png, '-i', wav,
+                 '-t', '%.2f' % dur, '-af', 'apad', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'stillimage',
+                 '-crf', '26', '-g', str(fps * 2), '-threads', '1', '-pix_fmt', 'yuv420p',
                  '-r', str(fps), '-c:a', 'aac', '-ar', '44100', '-ac', '1', clip])
             clips.append(clip)
         lst = os.path.join(tmp, 'list.txt')

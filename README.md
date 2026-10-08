@@ -37,3 +37,9 @@ Tests: `python3 test_render.py` (needs ffmpeg + pillow + flask).
 - Visuals are plain cards. Stock footage/images need a licensed source added later.
 - One render at a time (free hosts are small). A 60 s video may take ~1-2 min on a free CPU; the n8n node timeout is 120 s.
 - This service does NOT publish anywhere.
+
+## Async mode (v2)
+`POST /render` with `callbackUrl` (https, host must end with `.app.n8n.cloud`, override with env `ALLOWED_CALLBACK_HOSTS`) and `ownerChatId`
+returns `202 {status:"QUEUED"}` at once, renders in the background, then POSTs the result
+(`{jobId, ownerChatId, success, status, downloadUrl, durationSec, ...}`) to `callbackUrl` with `Authorization: Bearer <RENDER_TOKEN>`.
+Without `callbackUrl` it behaves as before (synchronous). Cards are encoded at 2 distinct fps and duplicated to the output fps (about 3x less CPU).
