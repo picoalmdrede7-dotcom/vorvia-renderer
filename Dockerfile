@@ -4,9 +4,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-de
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-# OPTIONAL better voice (Piper). Leave PIPER_VOICE_URL empty to use the built-in ffmpeg "flite" voice (robotic but zero-setup).
-# Verify the voice URL and its license on the official Piper voices page before enabling.
-ARG PIPER_VOICE_URL=""
+# Neural voice (Piper). Default: en_GB "cori" medium, a single female UK English voice trained on LibriVox recordings,
+# model card license: PUBLIC DOMAIN (safe for monetized videos). Set the PIPER_VOICE_URL env var in Render to change it,
+# or set it to an empty string to fall back to the robotic ffmpeg "flite" voice. Check any other voice's license first:
+# several Piper voices (ryan, hfc_female...) are CC BY-NC-SA, i.e. NOT allowed for commercial use.
+ARG PIPER_VOICE_URL="https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/cori/medium/en_GB-cori-medium.onnx"
 RUN if [ -n "$PIPER_VOICE_URL" ]; then pip install --no-cache-dir piper-tts \
     && mkdir -p /voices && curl -fsSL "$PIPER_VOICE_URL" -o /voices/voice.onnx \
     && curl -fsSL "$PIPER_VOICE_URL.json" -o /voices/voice.onnx.json \

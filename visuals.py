@@ -88,7 +88,11 @@ class Scene:
         w, h = self.w, self.h
         if self.bg is not None:
             from PIL import Image as _I
-            img = _I.blend(self.bg.next(), _I.new('RGB', (w, h), (0, 0, 0)), 0.5)
+            raw = self.bg.next()
+            z = 1.0 + 0.08 * min(1.0, t / self.dur)          # slow push-in (Ken Burns) so stock never feels static
+            cw, ch = int(w / z), int(h / z); cx0, cy0 = (w - cw) // 2, (h - ch) // 2
+            raw = raw.crop((cx0, cy0, cx0 + cw, cy0 + ch)).resize((w, h), _I.BILINEAR)
+            img = _I.blend(raw, _I.new('RGB', (w, h), (0, 0, 0)), 0.42)
             d = ImageDraw.Draw(img)
             if self.brand:
                 center_text(d, self.brand, font(max(16, w // 32)), w / 2, h - int(h * 0.055), (230, 240, 245))
@@ -102,14 +106,37 @@ class Scene:
         d.rectangle([int(w * 0.30), y + 6, int(w * 0.30 + w * 0.40 * e), y + 12], fill=self.accent)
         if self.bg is None:
             getattr(self, 'v_' + self.kind)(d, t)
-        # burned-in caption, chunked over the scene duration
-        cf = font(max(22, w // 20)); k = min(len(self.chunks) - 1, int(t / self.dur * len(self.chunks)))
-        cl = wrap(d, self.chunks[k], cf, w * 0.86)[:2]; cy = int(h * 0.80)
-        for ln in cl:
-            center_text(d, ln, cf, w / 2, cy, (255, 255, 255)); cy += int(cf.size * 1.3)
+        # burned-in caption: 5-word chunks, current word highlighted (follows the voice-over)
+        cf = font(max(24, w // 18)); words = self.voice.split() or ['']
+        speak = max(0.5, self.dur - 0.5); wi = min(len(words) - 1, int(min(1.0, t / speak) * len(words)))
+        k0 = (wi // 5) * 5; chunk = words[k0:k0 + 5]
+        lines, cur = [], []
+        for j, wd in enumerate(chunk):
+            trial = ' '.join(x for x, _ in cur + [(wd, j)])
+            if cur and d.textlength(trial, font=cf) > w * 0.86:
+                lines.append(cur); cur = []
+            cur.append((wd, j))
+        if cur: lines.append(cur)
+        cy = int(h * 0.78); sp = d.textlength(' ', font=cf)
+        for ln in lines[:2]:
+            tw = sum(d.textlength(x, font=cf) for x, _ in ln) + sp * (len(ln) - 1); x = (w - tw) / 2
+            for wd, j in ln:
+                on = (k0 + j) == wi
+                for ox, oy in ((-2, 0), (2, 0), (0, -2), (0, 2)):       # dark outline for readability on any footage
+                    d.text((x + ox, cy + oy), wd, font=cf, fill=(0, 0, 0))
+                d.text((x, cy), wd, font=cf, fill=self.accent if on else (255, 255, 255))
+                x += d.textlength(wd, font=cf) + sp
+            cy += int(cf.size * 1.35)
         # progress bar across the whole video
         prog = (self.idx + min(1.0, t / self.dur)) / self.total
         d.rectangle([0, h - 8, int(w * prog), h], fill=self.accent)
+        # soft cut: fade in from black at the start of every scene, fade the last scene out
+        fi = min(1.0, t / 0.25)
+        if self.idx == self.total - 1:
+            fi = min(fi, max(0.0, (self.dur - t) / 0.4))
+        if fi < 1.0:
+            from PIL import Image as _J
+            img = _J.blend(_J.new('RGB', (w, h), (0, 0, 0)), img, fi)
         return img
 
     # ---------- visuals ----------

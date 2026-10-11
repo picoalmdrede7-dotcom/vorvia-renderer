@@ -114,9 +114,17 @@ def tts(text, wav, tmp):
     text = re.sub(r'\s+', ' ', text).strip()
     model = os.environ.get('PIPER_MODEL', '')
     if model and shutil.which('piper') and os.path.exists(model):
-        p = subprocess.run(['piper', '--model', model, '--output_file', wav], input=text, capture_output=True, text=True, timeout=120)
-        if p.returncode == 0 and os.path.exists(wav):
-            return 'piper'
+        # natural pacing: slightly slower than default, small pauses between sentences.
+        # Flag spelling differs between piper-tts 1.2 (underscores) and 1.3+ (hyphens), so try both, then plain.
+        base = ['piper', '-m', model, '-f', wav]
+        for extra in (['--length-scale', '1.06', '--sentence-silence', '0.3'],
+                      ['--length_scale', '1.06', '--sentence_silence', '0.3'], []):
+            try:
+                p = subprocess.run(base + extra, input=text, capture_output=True, text=True, timeout=120)
+                if p.returncode == 0 and os.path.exists(wav) and os.path.getsize(wav) > 1000:
+                    return 'piper'
+            except Exception:
+                pass
     tf = os.path.join(tmp, 'v.txt'); open(tf, 'w').write(text)
     try:
         run(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'flite=textfile=%s:voice=slt' % tf, '-ar', '22050', wav], 120)
@@ -124,6 +132,9 @@ def tts(text, wav, tmp):
     except Exception:
         run(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'anullsrc=r=22050:cl=mono', '-t', '3', wav])
         return 'silent'
+
+# voice polish: remove rumble, gentle compression, broadcast loudness (-16 LUFS), then pad silence to the scene length
+VOICE_FX = 'highpass=f=70,acompressor=threshold=-20dB:ratio=3:attack=5:release=120,loudnorm=I=-16:TP=-1.5:LRA=9,apad'
 
 def render(raw_spec, out_dir, brand=''):
     spec = extract_spec(raw_spec)
@@ -146,7 +157,7 @@ def render(raw_spec, out_dir, brand=''):
             scene = V.Scene(sc['visual'], sc['text'], sc['voice'], sc['data'], k, len(scenes), w, h, dur, brand or str(spec.get('brand') or ''), bg)
             # frames are drawn in Python and piped to ffmpeg as raw RGB (no temp image files)
             p = subprocess.Popen(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', '%dx%d' % (w, h),
-                                  '-framerate', str(afps), '-i', '-', '-i', wav, '-t', '%.2f' % dur, '-af', 'apad',
+                                  '-framerate', str(afps), '-i', '-', '-i', wav, '-t', '%.2f' % dur, '-af', VOICE_FX,
                                   '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '27', '-g', str(afps * 2), '-threads', '1',
                                   '-pix_fmt', 'yuv420p', '-r', str(afps), '-c:a', 'aac', '-ar', '44100', '-ac', '1', clip],
                                  stdin=subprocess.PIPE, stderr=subprocess.PIPE)
